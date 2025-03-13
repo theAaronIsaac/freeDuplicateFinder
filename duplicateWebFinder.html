@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Duplicate File Finder</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+        }
+        
+        .container {
+            background-color: #f9f9f9;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        
+        .file-input {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .duplicate-group {
+            background-color: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            padding: 15px;
+        }
+        
+        .group-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+        
+        .file-item {
+            display: flex;
+            align-items: center;
+            padding: 8px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .file-item:last-child {
+            border-bottom: none;
+        }
+        
+        .file-path {
+            margin-left: 10px;
+            flex-grow: 1;
+            word-break: break-all;
+        }
+        
+        .file-size {
+            margin-left: 10px;
+            color: #666;
+            white-space: nowrap;
+        }
+        
+        .progress {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+        
+        .action-buttons {
+            margin-top: 20px;
+            text-align: center;
+        }
+        
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-right: 10px;
+        }
+        
+        button:hover {
+            background-color: #2980b9;
+        }
+        
+        button:disabled {
+            background-color: #95a5a6;
+            cursor: not-allowed;
+        }
+        
+        .delete-btn {
+            background-color: #e74c3c;
+        }
+        
+        .delete-btn:hover {
+            background-color: #c0392b;
+        }
+        
+        .select-all {
+            margin-left: auto;
+            cursor: pointer;
+            color: #3498db;
+        }
+        
+        .file-details {
+            display: flex;
+            flex-grow: 1;
+        }
+        
+        .status {
+            padding: 10px;
+            margin-top: 20px;
+            border-radius: 4px;
+            text-align: center;
+            display: none;
+        }
+        
+        .status.success {
+            background-color: #dff0d8;
+            color: #3c763d;
+        }
+        
+        .status.error {
+            background-color: #f2dede;
+            color: #a94442;
+        }
+        
+        /* Add responsiveness */
+        @media (max-width: 768px) {
+            .file-item {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            
+            .file-size {
+                margin-left: 30px;
+                margin-top: 5px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>Duplicate File Finder</h1>
+    
+    <div class="container">
+        <div class="file-input">
+            <p>Select a directory to scan for duplicate files:</p>
+            <input type="file" id="directoryInput" webkitdirectory directory multiple>
+            <p><small>Note: This tool works best in Chrome or Edge. Due to browser limitations, this tool analyzes files that you explicitly select.</small></p>
+        </div>
+        
+        <div class="progress" id="progressContainer">
+            <p id="progressText">Scanning files...</p>
+        </div>
+        
+        <div id="resultsContainer"></div>
+        
+        <div class="action-buttons">
+            <button id="scanBtn" disabled>Scan for Duplicates</button>
+            <button id="deleteBtn" class="delete-btn" disabled>Delete Selected Files</button>
+        </div>
+        
+        <div id="statusMsg" class="status"></div>
+    </div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const directoryInput = document.getElementById('directoryInput');
+            const scanBtn = document.getElementById('scanBtn');
+            const deleteBtn = document.getElementById('deleteBtn');
+            const progressContainer = document.getElementById('progressContainer');
+            const progressText = document.getElementById('progressText');
+            const resultsContainer = document.getElementById('resultsContainer');
+            const statusMsg = document.getElementById('statusMsg');
+            
+            let fileList = [];
+            let duplicateGroups = [];
+            
+            // Enable scan button when directory is selected
+            directoryInput.addEventListener('change', () => {
+                fileList = Array.from(directoryInput.files);
+                scanBtn.disabled = fileList.length === 0;
+                resultsContainer.innerHTML = '';
+                deleteBtn.disabled = true;
+                statusMsg.style.display = 'none';
+                
+                // Display the number of files selected
+                if (fileList.length > 0) {
+                    progressText.textContent = `${fileList.length} files selected. Click 'Scan for Duplicates' to analyze.`;
+                    progressContainer.style.display = 'block';
+                }
+            });
+            
+            // Calculate file hash for content comparison
+            async function calculateFileHash(file) {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    
+                    reader.onload = async (event) => {
+                        try {
+                            const arrayBuffer = event.target.result;
+                            const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
+                            const hashArray = Array.from(new Uint8Array(hashBuffer));
+                            const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+                            resolve(hashHex);
+                        } catch (err) {
+                            reject(err);
+                        }
+                    };
+                    
+                    reader.onerror = () => reject(new Error('Failed to read file'));
+                    reader.readAsArrayBuffer(file);
+                });
+            }
+            
+            // Format file size
+            function formatFileSize(bytes) {
+                if (bytes < 1024) return bytes + ' bytes';
+                else if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+                else if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + ' MB';
+                else return (bytes / 1073741824).toFixed(1) + ' GB';
+            }
+            
+            // Find duplicate files
+            async function findDuplicates(files) {
+                // Group files by size first
+                const filesBySize = {};
+                
+                files.forEach(file => {
+                    const size = file.size;
+                    if (!filesBySize[size]) {
+                        filesBySize[size] = [];
+                    }
+                    filesBySize[size].push(file);
+                });
+                
+                // Keep only groups with more than one file of the same size
+                const potentialDuplicates = Object.values(filesBySize).filter(group => group.length > 1);
+                
+                // Compare file hashes for potential duplicates
+                const duplicates = [];
+                let processedFiles = 0;
+                const totalFiles = potentialDuplicates.flat().length;
+                
+                for (const group of potentialDuplicates) {
+                    const hashGroups = {};
+                    
+                    for (const file of group) {
+                        try {
+                            progressText.textContent = `Analyzing file ${++processedFiles} of ${totalFiles}...`;
+                            const hash = await calculateFileHash(file);
+                            
+                            if (!hashGroups[hash]) {
+                                hashGroups[hash] = [];
+                            }
+                            hashGroups[hash].push({
+                                path: file.webkitRelativePath || file.name,
+                                size: file.size,
+                                file: file
+                            });
+                        } catch (error) {
+                            console.error(`Error processing file ${file.name}:`, error);
+                        }
+                    }
+                    
+                    // Keep only groups with more than one file with the same hash
+                    for (const [hash, files] of Object.entries(hashGroups)) {
+                        if (files.length > 1) {
+                            duplicates.push({
+                                hash,
+                                files
+                            });
+                        }
+                    }
+                }
+                
+                return duplicates;
+            }
+            
+            // Display duplicate groups in UI
+            function displayDuplicates(duplicateGroups) {
+                if (duplicateGroups.length === 0) {
+                    resultsContainer.innerHTML = '<p style="text-align: center;">No duplicate files found.</p>';
+                    return;
+                }
+                
+                resultsContainer.innerHTML = '';
+                
+                duplicateGroups.forEach((group, groupIndex) => {
+                    const groupContainer = document.createElement('div');
+                    groupContainer.className = 'duplicate-group';
+                    
+                    const groupHeader = document.createElement('div');
+                    groupHeader.className = 'group-header';
+                    
+                    const headerText = document.createElement('span');
+                    headerText.textContent = `Group ${groupIndex + 1}: ${group.files.length} identical files (${formatFileSize(group.files[0].size)})`;
+                    
+                    const selectAllLink = document.createElement('span');
+                    selectAllLink.className = 'select-all';
+                    selectAllLink.textContent = 'Select All';
+                    selectAllLink.addEventListener('click', () => {
+                        // Toggle all checkboxes in this group
+                        const checkboxes = groupContainer.querySelectorAll('input[type="checkbox"]');
+                        const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+                        
+                        checkboxes.forEach(checkbox => {
+                            checkbox.checked = !allChecked;
+                        });
+                        
+                        selectAllLink.textContent = allChecked ? 'Select All' : 'Deselect All';
+                        updateDeleteButton();
+                    });
+                    
+                    groupHeader.appendChild(headerText);
+                    groupHeader.appendChild(selectAllLink);
+                    groupContainer.appendChild(groupHeader);
+                    
+                    // Add file items
+                    group.files.forEach((file, fileIndex) => {
+                        const fileItem = document.createElement('div');
+                        fileItem.className = 'file-item';
+                        
+                        const checkbox = document.createElement('input');
+                        checkbox.type = 'checkbox';
+                        checkbox.dataset.groupIndex = groupIndex;
+                        checkbox.dataset.fileIndex = fileIndex;
+                        checkbox.addEventListener('change', updateDeleteButton);
+                        
+                        const fileDetails = document.createElement('div');
+                        fileDetails.className = 'file-details';
+                        
+                        const filePath = document.createElement('div');
+                        filePath.className = 'file-path';
+                        filePath.textContent = file.path;
+                        
+                        const fileSize = document.createElement('div');
+                        fileSize.className = 'file-size';
+                        fileSize.textContent = formatFileSize(file.size);
+                        
+                        fileDetails.appendChild(filePath);
+                        fileItem.appendChild(checkbox);
+                        fileItem.appendChild(fileDetails);
+                        fileItem.appendChild(fileSize);
+                        groupContainer.appendChild(fileItem);
+                    });
+                    
+                    resultsContainer.appendChild(groupContainer);
+                });
+                
+                // Make sure at least the first file in each group is not checked
+                duplicateGroups.forEach((_, groupIndex) => {
+                    const firstCheckbox = document.querySelector(`input[data-group-index="${groupIndex}"][data-file-index="0"]`);
+                    if (firstCheckbox) {
+                        firstCheckbox.disabled = true;
+                        firstCheckbox.title = 'Keep at least one file from each group';
+                    }
+                });
+            }
+            
+            // Update delete button state
+            function updateDeleteButton() {
+                const checkboxes = document.querySelectorAll('input[type="checkbox"]:checked:not(:disabled)');
+                deleteBtn.disabled = checkboxes.length === 0;
+            }
+            
+            // Scan button click handler
+            scanBtn.addEventListener('click', async () => {
+                try {
+                    resultsContainer.innerHTML = '';
+                    progressContainer.style.display = 'block';
+                    scanBtn.disabled = true;
+                    deleteBtn.disabled = true;
+                    statusMsg.style.display = 'none';
+                    
+                    progressText.textContent = 'Grouping files by size...';
+                    
+                    // Find duplicates
+                    duplicateGroups = await findDuplicates(fileList);
+                    
+                    progressContainer.style.display = 'none';
+                    displayDuplicates(duplicateGroups);
+                    scanBtn.disabled = false;
+                } catch (error) {
+                    console.error('Error scanning for duplicates:', error);
+                    statusMsg.textContent = `Error: ${error.message}`;
+                    statusMsg.className = 'status error';
+                    statusMsg.style.display = 'block';
+                    scanBtn.disabled = false;
+                }
+            });
+            
+            // Delete button click handler
+            deleteBtn.addEventListener('click', () => {
+                const checkboxes = document.querySelectorAll('input[type="checkbox"]:checked:not(:disabled)');
+                
+                if (checkboxes.length === 0) return;
+                
+                const confirmation = confirm(`Are you sure you want to delete ${checkboxes.length} files?`);
+                
+                if (!confirmation) return;
+                
+                statusMsg.textContent = `This web app cannot actually delete files due to browser security restrictions. In a real application, this would delete the selected files.`;
+                statusMsg.className = 'status success';
+                statusMsg.style.display = 'block';
+                
+                // In a real app, you would delete the files here
+                // Since browser JavaScript cannot delete files, this is just a simulation
+            });
+        });
+    </script>
+</body>
+</html>
